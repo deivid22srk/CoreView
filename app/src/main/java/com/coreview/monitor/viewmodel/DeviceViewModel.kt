@@ -4,7 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.coreview.monitor.data.BatteryInfo
-import com.coreview.monitor.data.CpuCore
+import com.coreview.monitor.data.CpuInfo
 import com.coreview.monitor.data.DisplayInfo
 import com.coreview.monitor.data.MemoryInfo
 import com.coreview.monitor.utils.SystemMonitor
@@ -17,8 +17,8 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
     
     private val systemMonitor = SystemMonitor(application)
     
-    private val _cpuCores = MutableStateFlow<List<CpuCore>>(emptyList())
-    val cpuCores: StateFlow<List<CpuCore>> = _cpuCores
+    private val _cpuInfo = MutableStateFlow<CpuInfo?>(null)
+    val cpuInfo: StateFlow<CpuInfo?> = _cpuInfo
     
     private val _batteryInfo = MutableStateFlow<BatteryInfo?>(null)
     val batteryInfo: StateFlow<BatteryInfo?> = _batteryInfo
@@ -36,7 +36,7 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
     private fun startMonitoring() {
         viewModelScope.launch {
             while (true) {
-                _cpuCores.value = systemMonitor.getCpuCores()
+                _cpuInfo.value = systemMonitor.getCpuInfo()
                 _batteryInfo.value = systemMonitor.getBatteryInfo()
                 _displayInfo.value = systemMonitor.getDisplayInfo()
                 _memoryInfo.value = systemMonitor.getMemoryInfo()

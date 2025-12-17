@@ -8,6 +8,29 @@ data class CpuCore(
     val usage: Float
 )
 
+data class CpuInfo(
+    val cores: List<CpuCore>,
+    val chipsetName: String,
+    val chipsetModel: String,
+    val processNode: String,
+    val coreCount: Int,
+    val is64Bit: Boolean,
+    val manufacturer: String,
+    val hardware: String,
+    val architecture: String,
+    val abi: String,
+    val supportedAbis: List<String>,
+    val governor: String,
+    val coreConfigs: List<CoreConfig>
+)
+
+data class CoreConfig(
+    val name: String,
+    val count: Int,
+    val minFreq: Long,
+    val maxFreq: Long
+)
+
 data class BatteryInfo(
     val level: Int,
     val temperature: Float,

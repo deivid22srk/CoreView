@@ -5,20 +5,47 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.BatteryManager
+import android.os.Build
 import android.provider.Settings
 import android.util.DisplayMetrics
 import android.view.WindowManager
 import com.coreview.monitor.data.BatteryInfo
+import com.coreview.monitor.data.CoreConfig
 import com.coreview.monitor.data.CpuCore
+import com.coreview.monitor.data.CpuInfo
 import com.coreview.monitor.data.DisplayInfo
 import com.coreview.monitor.data.MemoryInfo
 import java.io.File
-import java.io.RandomAccessFile
 import kotlin.math.sqrt
 
 class SystemMonitor(private val context: Context) {
 
-    fun getCpuCores(): List<CpuCore> {
+    fun getCpuInfo(): CpuInfo {
+        val cores = getCpuCores()
+        val hardware = getHardwareInfo()
+        val supportedAbis = Build.SUPPORTED_ABIS.toList()
+        val governor = readStringFromFile("/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor") ?: "Unknown"
+        
+        val coreConfigs = detectCoreConfiguration(cores)
+        
+        return CpuInfo(
+            cores = cores,
+            chipsetName = hardware["chipset_name"] ?: "Unknown",
+            chipsetModel = hardware["chipset_model"] ?: Build.HARDWARE,
+            processNode = hardware["process_node"] ?: "Unknown",
+            coreCount = cores.size,
+            is64Bit = Build.SUPPORTED_64_BIT_ABIS.isNotEmpty(),
+            manufacturer = hardware["manufacturer"] ?: Build.MANUFACTURER,
+            hardware = Build.HARDWARE,
+            architecture = System.getProperty("os.arch") ?: "Unknown",
+            abi = Build.SUPPORTED_ABIS.firstOrNull() ?: "Unknown",
+            supportedAbis = supportedAbis,
+            governor = governor,
+            coreConfigs = coreConfigs
+        )
+    }
+
+    private fun getCpuCores(): List<CpuCore> {
         val cores = mutableListOf<CpuCore>()
         var coreId = 0
         
@@ -36,6 +63,100 @@ class SystemMonitor(private val context: Context) {
         }
         
         return cores
+    }
+
+    private fun detectCoreConfiguration(cores: List<CpuCore>): List<CoreConfig> {
+        val configs = mutableListOf<CoreConfig>()
+        val freqGroups = cores.groupBy { it.maxFreq }
+        
+        freqGroups.entries.sortedBy { it.key }.forEachIndexed { index, entry ->
+            val coreName = when (index) {
+                0 -> "Cortex-A55"
+                1 -> "Cortex-A78"
+                else -> "Core"
+            }
+            
+            configs.add(
+                CoreConfig(
+                    name = coreName,
+                    count = entry.value.size,
+                    minFreq = entry.value.firstOrNull()?.minFreq ?: 0L,
+                    maxFreq = entry.key
+                )
+            )
+        }
+        
+        return configs
+    }
+
+    private fun getHardwareInfo(): Map<String, String> {
+        val info = mutableMapOf<String, String>()
+        
+        try {
+            val cpuInfo = File("/proc/cpuinfo").readText()
+            
+            cpuInfo.lines().forEach { line ->
+                when {
+                    line.startsWith("Hardware") -> {
+                        val hardware = line.substringAfter(":").trim()
+                        info["hardware_raw"] = hardware
+                        
+                        when {
+                            hardware.contains("Qualcomm", ignoreCase = true) -> {
+                                info["manufacturer"] = "Qualcomm"
+                                info["chipset_name"] = extractQualcommChipset(hardware)
+                            }
+                            hardware.contains("MediaTek", ignoreCase = true) || hardware.contains("MT", ignoreCase = true) -> {
+                                info["manufacturer"] = "MediaTek"
+                                info["chipset_name"] = "MediaTek $hardware"
+                            }
+                            hardware.contains("Exynos", ignoreCase = true) -> {
+                                info["manufacturer"] = "Samsung"
+                                info["chipset_name"] = "Samsung $hardware"
+                            }
+                        }
+                    }
+                    line.startsWith("Processor") -> {
+                        info["processor"] = line.substringAfter(":").trim()
+                    }
+                }
+            }
+            
+            if (Build.HARDWARE.contains("qcom", ignoreCase = true) || 
+                Build.HARDWARE.contains("qualcomm", ignoreCase = true)) {
+                info["manufacturer"] = "Qualcomm"
+                if (!info.containsKey("chipset_name")) {
+                    info["chipset_name"] = "Qualcomm Snapdragon"
+                }
+            }
+            
+            info["chipset_model"] = Build.HARDWARE
+            info["process_node"] = estimateProcessNode()
+            
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        
+        return info
+    }
+
+    private fun extractQualcommChipset(hardware: String): String {
+        return when {
+            hardware.contains("SM", ignoreCase = true) -> {
+                val model = hardware.substringAfter("SM", "").take(4)
+                "Qualcomm Snapdragon (SM$model)"
+            }
+            else -> "Qualcomm Snapdragon"
+        }
+    }
+
+    private fun estimateProcessNode(): String {
+        return when {
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> "4-7 nm"
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> "5-8 nm"
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> "7-10 nm"
+            else -> "10+ nm"
+        }
     }
 
     private fun getCpuUsage(coreId: Int): Float {
@@ -191,6 +312,14 @@ class SystemMonitor(private val context: Context) {
     private fun readLongFromFile(path: String): Long? {
         return try {
             File(path).readText().trim().toLong()
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun readStringFromFile(path: String): String? {
+        return try {
+            File(path).readText().trim()
         } catch (e: Exception) {
             null
         }
