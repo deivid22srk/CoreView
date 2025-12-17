@@ -63,7 +63,7 @@ fun GpuDetailCard(gpuInfo: GpuInfo) {
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Videogame,
+                        imageVector = Icons.Default.Widgets,
                         contentDescription = null,
                         tint = Color.White,
                         modifier = Modifier.size(32.dp)
